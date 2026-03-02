@@ -1,3 +1,4 @@
+import os
 import streamlit as st
 import json
 import base64
@@ -7,6 +8,7 @@ import ai_engine
 import prompts
 import re
 from datetime import datetime
+import pandas as pd
 
 # --- UI 세션 상태 초기화 ---
 if 'logged_in_id' not in st.session_state:
@@ -367,15 +369,33 @@ def show_main_content(emp_id):
 
     user_name = user_info[0]
     user_team = user_info[4] if len(user_info) > 4 else "미소속"
+
+    # --- 관리자 로그인 상태 ---
+    if "is_admin" not in st.session_state:
+        st.session_state.is_admin = False
     
     with st.sidebar:
         st.markdown(f"### 👤 {user_name}님")
         st.caption(f"사번: {emp_id}")
         st.caption(f"소속: {user_team}")
+
+        # 관리자 로그인(Secrets 기반)
+        with st.expander("🛠 관리자 로그인", expanded=False):
+            admin_pw = st.text_input("관리자 비밀번호", type="password", placeholder="Secrets에 설정한 비밀번호")
+            if st.button("관리자 인증"):
+                expected = os.getenv("ADMIN_PASSWORD")
+                if expected and admin_pw == expected:
+                    st.session_state.is_admin = True
+                    st.success("관리자 인증 완료")
+                else:
+                    st.error("관리자 비밀번호가 올바르지 않습니다.")
+
         if st.button("로그아웃"):
             if "user" in st.query_params:
                 del st.query_params["user"]
-            del st.session_state.logged_in_id
+            if "logged_in_id" in st.session_state:
+                del st.session_state.logged_in_id
+            st.session_state.is_admin = False
             st.rerun()
         
         st.divider()
@@ -404,7 +424,7 @@ def show_main_content(emp_id):
     pending_requests = db.get_pending_requests(emp_id)
     notif_badge = f" 🔴 {len(pending_requests)}" if pending_requests else ""
 
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["🔒 데이터 등록", f"📩 파트너 매칭{notif_badge}", "📊 시너지 분석", "🏢 팀 분석", "👤 내 성향 분석"])
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["🔒 데이터 등록", f"📩 파트너 매칭{notif_badge}", "📊 시너지 분석", "🏢 팀 분석", "👤 내 성향 분석", "🛠 관리자"])
 
     with tab1:
         st.markdown('<div class="card">', unsafe_allow_html=True)
@@ -615,8 +635,25 @@ def show_main_content(emp_id):
                     info_b = db.get_user_info(selected_other)
                     mode_map = {"직장 동료": "colleague", "연인 궁합": "couple", "상사-부하": "hierarchy"}
                     with st.spinner("🔍 Gemini 3가 시너지를 정교하게 분석 중입니다..."):
-                        report = ai_engine.analyze_compatibility(info_a[1], info_b[1], info_a[0], info_b[0], mode=mode_map[mode], additional_info=additional_info)
+                        report, meta = ai_engine.analyze_compatibility_with_meta(
+                            info_a[1],
+                            info_b[1],
+                            info_a[0],
+                            info_b[0],
+                            mode=mode_map[mode],
+                            additional_info=additional_info,
+                        )
                         db.save_analysis_report(emp_id, selected_other, mode_map[mode], report)
+                        if meta:
+                            db.save_analysis_audit(
+                                emp_id=emp_id,
+                                target_id=selected_other,
+                                mode=mode_map[mode],
+                                model=meta.get("model"),
+                                system_prompt=meta.get("system_prompt"),
+                                user_prompt=meta.get("user_prompt"),
+                                report=report,
+                            )
                     st.markdown("---")
                     with st.container():
                         st.markdown(f'<div class="report-box">', unsafe_allow_html=True)
@@ -700,8 +737,18 @@ def show_main_content(emp_id):
                     if st.button("🚀 팀 전체 시너지 분석"):
                         with st.spinner("팀 역학 관계 및 시너지 분석 중..."):
                             data_for_ai = [(m[0], m[1], m[2]) for m in active_members]
-                            report = ai_engine.analyze_team_synergy(data_for_ai, user_team, leader_name)
+                            report, meta = ai_engine.analyze_team_synergy_with_meta(data_for_ai, user_team, leader_name)
                             db.save_analysis_report(emp_id, user_team, "Team Analysis", report)
+                            if meta:
+                                db.save_analysis_audit(
+                                    emp_id=emp_id,
+                                    target_id=user_team,
+                                    mode="Team Analysis",
+                                    model=meta.get("model"),
+                                    system_prompt=meta.get("system_prompt"),
+                                    user_prompt=meta.get("user_prompt"),
+                                    report=report,
+                                )
                         st.markdown("---")
                         with st.container():
                             st.markdown(f'<div class="report-box">', unsafe_allow_html=True)
@@ -728,14 +775,93 @@ def show_main_content(emp_id):
             
             if report_type:
                 with st.spinner("🔍 Gemini 3가 당신의 페르소나를 매핑 중입니다..."):
-                    report = ai_engine.analyze_compatibility(info_self[1], None, info_self[0], None, mode=report_type, additional_info={"gender": gender})
+                    report, meta = ai_engine.analyze_compatibility_with_meta(
+                        info_self[1],
+                        None,
+                        info_self[0],
+                        None,
+                        mode=report_type,
+                        additional_info={"gender": gender},
+                    )
                     db.save_analysis_report(emp_id, None, report_type, report)
+                    if meta:
+                        db.save_analysis_audit(
+                            emp_id=emp_id,
+                            target_id=None,
+                            mode=report_type,
+                            model=meta.get("model"),
+                            system_prompt=meta.get("system_prompt"),
+                            user_prompt=meta.get("user_prompt"),
+                            report=report,
+                        )
                 st.markdown("---")
                 with st.container():
                     st.markdown(f'<div class="report-box">', unsafe_allow_html=True)
                     st.markdown(report)
                     st.markdown('</div>', unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
+
+    with tab6:
+        st.markdown('<div class="card">', unsafe_allow_html=True)
+        st.subheader("🛠 관리자 페이지")
+
+        if not st.session_state.get("is_admin"):
+            st.info("관리자 권한이 필요합니다. 좌측 사이드바에서 관리자 비밀번호를 입력해 인증해주세요.")
+            st.markdown('</div>', unsafe_allow_html=True)
+        else:
+            st.caption("최근 분석 로그(프롬프트/결과)를 조회합니다. 개인정보/민감정보는 외부 공유 금지.")
+
+            col_a, col_b, col_c = st.columns([1, 1, 1])
+            with col_a:
+                filter_emp = st.text_input("사번/ID 필터(선택)", placeholder="예: s11111")
+            with col_b:
+                filter_mode = st.selectbox(
+                    "모드 필터",
+                    ["(전체)", "colleague", "couple", "hierarchy", "self_mbti", "self_archetype", "self_swot", "Team Analysis"],
+                )
+            with col_c:
+                limit = st.selectbox("표시 개수", [50, 100, 200, 500], index=2)
+
+            rows = db.get_analysis_audit(limit=limit, emp_id=(filter_emp.strip() if filter_emp else None), mode=filter_mode)
+            if not rows:
+                st.warning("표시할 로그가 없습니다.")
+                st.markdown('</div>', unsafe_allow_html=True)
+            else:
+                # rows: (id, emp_id, target_id, mode, model, system_prompt, user_prompt, report, created_at)
+                data = []
+                for r in rows:
+                    _id, _emp, _target, _mode, _model, _sys, _usr, _rep, _ts = r
+                    data.append(
+                        {
+                            "id": _id,
+                            "created_at": _ts,
+                            "emp_id": _emp,
+                            "target_id": _target,
+                            "mode": _mode,
+                            "model": _model,
+                            "prompt_preview": ("" if not _usr else (_usr[:120] + "…" if len(_usr) > 120 else _usr)),
+                            "report_preview": ("" if not _rep else (_rep[:120] + "…" if len(_rep) > 120 else _rep)),
+                        }
+                    )
+
+                df = pd.DataFrame(data)
+                st.dataframe(df, use_container_width=True, hide_index=True)
+
+                selected_id = st.selectbox("상세 보기(id)", options=df["id"].tolist())
+                selected_row = next((r for r in rows if r[0] == selected_id), None)
+                if selected_row:
+                    _id, _emp, _target, _mode, _model, _sys, _usr, _rep, _ts = selected_row
+                    st.markdown("---")
+                    st.write(f"**시간:** {_ts} | **사번/ID:** {_emp} | **대상:** {_target} | **모드:** {_mode} | **모델:** {_model}")
+
+                    with st.expander("System Prompt", expanded=False):
+                        st.code(_sys or "(없음)")
+                    with st.expander("User Prompt", expanded=False):
+                        st.code(_usr or "(없음)")
+                    with st.expander("Report (결과)", expanded=True):
+                        st.markdown(_rep or "(없음)")
+
+                st.markdown('</div>', unsafe_allow_html=True)
 
 def main():
     set_page_style()

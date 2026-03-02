@@ -94,13 +94,18 @@ def _build_prompt(data_a, data_b, name_a, name_b, mode, additional_info):
     return system_prompt, user_content
 
 
-def analyze_compatibility(data_a, data_b, name_a, name_b, mode="colleague", additional_info=None):
+def analyze_compatibility_with_meta(data_a, data_b, name_a, name_b, mode="colleague", additional_info=None):
+    """리포트 + (관리자용) 프롬프트/모델 메타를 함께 반환
+
+    Returns:
+      (report_text, meta_dict)
+    """
     if not get_openai_api_key():
-        return "⚠️ OPENAI_API_KEY가 설정되지 않았습니다. 관리자에게 문의하세요."
+        return "⚠️ OPENAI_API_KEY가 설정되지 않았습니다. 관리자에게 문의하세요.", None
 
     client = init_openai_client()
     if not client:
-        return "⚠️ OpenAI 클라이언트 초기화에 실패했습니다."
+        return "⚠️ OpenAI 클라이언트 초기화에 실패했습니다.", None
 
     system_prompt, user_content = _build_prompt(
         data_a=data_a,
@@ -115,8 +120,9 @@ def analyze_compatibility(data_a, data_b, name_a, name_b, mode="colleague", addi
         timeout_s = int(os.getenv("OPENAI_TIMEOUT", "45"))
         max_tokens = int(os.getenv("OPENAI_MAX_TOKENS", "900"))
 
+        model_name = get_openai_model()
         resp = client.chat.completions.create(
-            model=get_openai_model(),
+            model=model_name,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_content},
@@ -125,19 +131,25 @@ def analyze_compatibility(data_a, data_b, name_a, name_b, mode="colleague", addi
             max_tokens=max_tokens,
             timeout=timeout_s,
         )
-        return resp.choices[0].message.content
+        report = resp.choices[0].message.content
+        meta = {
+            "model": model_name,
+            "system_prompt": system_prompt,
+            "user_prompt": user_content,
+        }
+        return report, meta
 
     except Exception as e:
-        return handle_ai_error(e)
+        return handle_ai_error(e), None
 
 
-def analyze_team_synergy(team_members, team_name, leader_name):
+def analyze_team_synergy_with_meta(team_members, team_name, leader_name):
     if not get_openai_api_key():
-        return "⚠️ OPENAI_API_KEY가 설정되지 않았습니다. 관리자에게 문의하세요."
+        return "⚠️ OPENAI_API_KEY가 설정되지 않았습니다. 관리자에게 문의하세요.", None
 
     client = init_openai_client()
     if not client:
-        return "⚠️ OpenAI 클라이언트 초기화에 실패했습니다."
+        return "⚠️ OpenAI 클라이언트 초기화에 실패했습니다.", None
 
     members_data_str = ""
     for member in team_members:
@@ -154,17 +166,34 @@ def analyze_team_synergy(team_members, team_name, leader_name):
         timeout_s = int(os.getenv("OPENAI_TIMEOUT", "45"))
         max_tokens = int(os.getenv("OPENAI_MAX_TOKENS", "900"))
 
+        model_name = get_openai_model()
         resp = client.chat.completions.create(
-            model=get_openai_model(),
+            model=model_name,
             messages=[{"role": "system", "content": system_prompt}],
             temperature=0.3,
             max_tokens=max_tokens,
             timeout=timeout_s,
         )
-        return resp.choices[0].message.content
+        report = resp.choices[0].message.content
+        meta = {
+            "model": model_name,
+            "system_prompt": system_prompt,
+            "user_prompt": "",
+        }
+        return report, meta
 
     except Exception as e:
-        return handle_ai_error(e)
+        return handle_ai_error(e), None
+
+
+def analyze_compatibility(data_a, data_b, name_a, name_b, mode="colleague", additional_info=None):
+    report, _meta = analyze_compatibility_with_meta(data_a, data_b, name_a, name_b, mode=mode, additional_info=additional_info)
+    return report
+
+
+def analyze_team_synergy(team_members, team_name, leader_name):
+    report, _meta = analyze_team_synergy_with_meta(team_members, team_name, leader_name)
+    return report
 
 
 def handle_ai_error(e):

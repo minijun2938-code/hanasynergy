@@ -51,6 +51,19 @@ def init_db():
         try:
             c.execute("ALTER TABLE analysis_history ADD COLUMN is_favorite INTEGER DEFAULT 0")
         except: pass
+
+        # (관리자용) 분석 감사 로그: 어떤 요청(프롬프트)이 어떤 결과를 만들었는지 추적
+        c.execute('''CREATE TABLE IF NOT EXISTS analysis_audit
+                     (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                      emp_id TEXT,
+                      target_id TEXT,
+                      mode TEXT,
+                      model TEXT,
+                      system_prompt TEXT,
+                      user_prompt TEXT,
+                      report TEXT,
+                      created_at TEXT)''')
+
         conn.commit()
 
 def save_profile(emp_id, profile_json, llm_name=None):
@@ -125,9 +138,46 @@ def save_analysis_report(emp_id, target_id, mode, report):
     now = get_kst_now()
     with get_connection() as conn:
         c = conn.cursor()
-        c.execute("INSERT INTO analysis_history (emp_id, target_id, mode, report, created_at, is_favorite) VALUES (?, ?, ?, ?, ?, 0)",
-                  (emp_id, target_id, mode, report, now))
+        c.execute(
+            "INSERT INTO analysis_history (emp_id, target_id, mode, report, created_at, is_favorite) VALUES (?, ?, ?, ?, ?, 0)",
+            (emp_id, target_id, mode, report, now),
+        )
         conn.commit()
+
+
+def save_analysis_audit(emp_id, target_id, mode, model, system_prompt, user_prompt, report):
+    """관리자용: 분석 요청/프롬프트/결과를 함께 저장합니다."""
+    now = get_kst_now()
+    with get_connection() as conn:
+        c = conn.cursor()
+        c.execute(
+            """INSERT INTO analysis_audit
+               (emp_id, target_id, mode, model, system_prompt, user_prompt, report, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (emp_id, target_id, mode, model, system_prompt, user_prompt, report, now),
+        )
+        conn.commit()
+
+
+def get_analysis_audit(limit=200, emp_id=None, mode=None):
+    """관리자용: 최근 분석 감사 로그를 가져옵니다."""
+    q = "SELECT id, emp_id, target_id, mode, model, system_prompt, user_prompt, report, created_at FROM analysis_audit"
+    where = []
+    params = []
+    if emp_id:
+        where.append("emp_id = ?")
+        params.append(emp_id)
+    if mode and mode != "(전체)":
+        where.append("mode = ?")
+        params.append(mode)
+    if where:
+        q += " WHERE " + " AND ".join(where)
+    q += " ORDER BY id DESC LIMIT ?"
+    params.append(int(limit))
+
+    with get_connection() as conn:
+        c = conn.cursor()
+        return c.execute(q, params).fetchall()
 
 def get_analysis_history(emp_id):
     """사용자의 최근 분석 히스토리를 가져옵니다."""
