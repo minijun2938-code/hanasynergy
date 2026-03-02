@@ -1,38 +1,47 @@
 import os
-import socket
-import prompts
+import google.generativeai as genai
 from dotenv import load_dotenv
-
-# OpenAI
-from openai import OpenAI
-from openai import APIError, APIConnectionError, RateLimitError, AuthenticationError, BadRequestError
+import prompts
 
 load_dotenv()
 
 
-def get_openai_api_key():
-    # Streamlit Cloud/로컬에서 키 교체 후 재시작 없이 반영되도록 매번 조회
-    return os.getenv("OPENAI_API_KEY")
+def get_api_key():
+    # 키를 교체한 뒤 앱을 재시작하지 않아도 반영되도록 매번 조회
+    return os.getenv("GOOGLE_API_KEY")
 
 
-def get_openai_model():
-    # 필요하면 Streamlit Secrets에서 모델 교체 가능
-    return os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+def get_gemini_model():
+    # Streamlit Secrets에서 바꾸고 싶으면 GEMINI_MODEL로 오버라이드
+    return os.getenv("GEMINI_MODEL", "models/gemini-3-flash-preview")
 
 
-def init_openai_client():
-    api_key = get_openai_api_key()
+def init_genai():
+    api_key = get_api_key()
     if not api_key:
         return None
 
-    # 선택: 프록시/커스텀 엔드포인트가 필요하면 OPENAI_BASE_URL 사용
-    base_url = os.getenv("OPENAI_BASE_URL")
-    if base_url:
-        return OpenAI(api_key=api_key, base_url=base_url)
-    return OpenAI(api_key=api_key)
+    # DNS 문제를 줄이기 위해 transport='rest'
+    genai.configure(api_key=api_key, transport="rest")
+
+    model = genai.GenerativeModel(
+        model_name=get_gemini_model(),
+        generation_config={
+            "temperature": 0.25,
+            "max_output_tokens": int(os.getenv("GEMINI_MAX_OUTPUT_TOKENS", "2048")),
+        },
+    )
+    return model
 
 
-def _build_prompt(data_a, data_b, name_a, name_b, mode, additional_info):
+def analyze_compatibility(data_a, data_b, name_a, name_b, mode="colleague", additional_info=None):
+    if not get_api_key():
+        return "⚠️ GOOGLE_API_KEY가 설정되지 않았습니다. 관리자에게 문의하세요."
+
+    model = init_genai()
+    if not model:
+        return "⚠️ Gemini 모델 초기화에 실패했습니다."
+
     if additional_info is None:
         additional_info = {}
 
@@ -61,8 +70,8 @@ def _build_prompt(data_a, data_b, name_a, name_b, mode, additional_info):
         system_prompt = prompts.COLLEAGUE_PROMPT
         context_text = "관계 유형: 직장 동료"
 
-    # 길이/속도 최적화를 위한 기본 가드(필요하면 prompts.py에서 더 강하게 제한 가능)
-    length_hint = "리포트는 너무 길지 않게, 핵심 위주로 1200~1800자 내로 작성해줘."
+    # 속도 최적화를 위한 길이 힌트
+    length_hint = "리포트는 핵심 위주로 1200~1800자 내로 작성해줘."
 
     if mode.startswith("self"):
         user_content = f"""
@@ -88,54 +97,24 @@ def _build_prompt(data_a, data_b, name_a, name_b, mode, additional_info):
 **주의: 데이터 원본 문구를 절대 직접 인용하거나 출력하지 마세요.**
 """.strip()
 
-    return system_prompt, user_content
-
-
-def analyze_compatibility(data_a, data_b, name_a, name_b, mode="colleague", additional_info=None):
-    if not get_openai_api_key():
-        return "⚠️ OPENAI_API_KEY가 설정되지 않았습니다. 관리자에게 문의하세요."
-
-    client = init_openai_client()
-    if not client:
-        return "⚠️ OpenAI 클라이언트 초기화에 실패했습니다."
-
-    system_prompt, user_content = _build_prompt(
-        data_a=data_a,
-        data_b=data_b,
-        name_a=name_a,
-        name_b=name_b,
-        mode=mode,
-        additional_info=additional_info,
-    )
-
     try:
-        model = get_openai_model()
-        # timeout: 무한로딩 방지
-        timeout_s = int(os.getenv("OPENAI_TIMEOUT", "60"))
-
-        resp = client.chat.completions.create(
-            model=model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_content},
-            ],
-            temperature=0.3,
-            max_tokens=int(os.getenv("OPENAI_MAX_TOKENS", "1200")),
-            timeout=timeout_s,
+        timeout_s = int(os.getenv("GEMINI_TIMEOUT", "60"))
+        response = model.generate_content(
+            [system_prompt, user_content],
+            request_options={"timeout": timeout_s},
         )
-        return resp.choices[0].message.content
-
+        return response.text
     except Exception as e:
         return handle_ai_error(e)
 
 
 def analyze_team_synergy(team_members, team_name, leader_name):
-    if not get_openai_api_key():
-        return "⚠️ OPENAI_API_KEY가 설정되지 않았습니다. 관리자에게 문의하세요."
+    if not get_api_key():
+        return "⚠️ GOOGLE_API_KEY가 설정되지 않았습니다. 관리자에게 문의하세요."
 
-    client = init_openai_client()
-    if not client:
-        return "⚠️ OpenAI 클라이언트 초기화에 실패했습니다."
+    model = init_genai()
+    if not model:
+        return "⚠️ Gemini 모델 초기화에 실패했습니다."
 
     members_data_str = ""
     for member in team_members:
@@ -149,44 +128,26 @@ def analyze_team_synergy(team_members, team_name, leader_name):
     )
 
     try:
-        model = get_openai_model()
-        timeout_s = int(os.getenv("OPENAI_TIMEOUT", "60"))
-
-        resp = client.chat.completions.create(
-            model=model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-            ],
-            temperature=0.3,
-            max_tokens=int(os.getenv("OPENAI_MAX_TOKENS", "1200")),
-            timeout=timeout_s,
+        timeout_s = int(os.getenv("GEMINI_TIMEOUT", "60"))
+        response = model.generate_content(
+            system_prompt,
+            request_options={"timeout": timeout_s},
         )
-        return resp.choices[0].message.content
-
+        return response.text
     except Exception as e:
         return handle_ai_error(e)
 
 
 def handle_ai_error(e):
-    # OpenAI SDK 예외 매핑 + 혹시 모르는 문자열 에러까지 커버
-    if isinstance(e, AuthenticationError):
-        return "⚠️ OpenAI API 키가 유효하지 않거나 권한이 없습니다. (OPENAI_API_KEY 확인)"
-    if isinstance(e, RateLimitError):
-        return "⚠️ 요청이 너무 많거나 한도(레이트리밋/쿼터)에 걸렸습니다. 잠시 후 다시 시도해 주세요."
-    if isinstance(e, BadRequestError):
-        return "⚠️ 요청 형식이 올바르지 않거나 입력 데이터가 너무 큽니다."
-    if isinstance(e, APIConnectionError):
-        return "⚠️ OpenAI 연결 오류가 발생했습니다. 네트워크 상태를 확인해 주세요."
-    if isinstance(e, APIError):
-        return f"⚠️ OpenAI API 오류: {str(e)}"
-
-    # 타임아웃/기타
-    if isinstance(e, TimeoutError) or isinstance(e, socket.timeout):
-        return "⚠️ 응답 시간이 초과되었습니다. 잠시 후 다시 시도해 주세요."
-
     err_msg = str(e)
+    if "Resource exhausted" in err_msg or "quota" in err_msg.lower():
+        return f"⚠️ 하루 사용량(Quota) 초과 또는 요금제 한도 부족입니다. (Error: {err_msg})"
     if "429" in err_msg:
-        return "⚠️ 요청이 너무 많거나 한도(레이트리밋/쿼터)에 걸렸습니다. 잠시 후 다시 시도해 주세요."
-    if "401" in err_msg:
-        return "⚠️ OpenAI API 키가 유효하지 않거나 권한이 없습니다. (OPENAI_API_KEY 확인)"
+        return "⚠️ 짧은 시간에 너무 많은 요청이 있었습니다. 5~10초 후 다시 시도해 주세요."
+    if "401" in err_msg or "Unauthenticated" in err_msg:
+        return "⚠️ API 키가 유효하지 않거나 만료되었습니다. (GOOGLE_API_KEY 확인)"
+    if "400" in err_msg or "InvalidArgument" in err_msg:
+        return "⚠️ 입력된 데이터 형식이 올바르지 않거나 데이터가 너무 큽니다."
+    if "DeadlineExceeded" in err_msg or "timeout" in err_msg.lower():
+        return "⚠️ 분석 시간이 너무 오래 걸려 중단되었습니다. 잠시 후 다시 시도해 주세요."
     return f"⚠️ 분석 중 오류가 발생했습니다: {err_msg}"
