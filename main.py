@@ -383,7 +383,7 @@ def show_main_content(emp_id):
         with st.expander("🛠 관리자 로그인", expanded=False):
             admin_pw = st.text_input("관리자 비밀번호", type="password", placeholder="Secrets에 설정한 비밀번호")
             if st.button("관리자 인증"):
-                expected = os.getenv("ADMIN_PASSWORD")
+                expected = st.secrets.get("ADMIN_PASSWORD") if "ADMIN_PASSWORD" in st.secrets else os.getenv("ADMIN_PASSWORD")
                 if expected and admin_pw == expected:
                     st.session_state.is_admin = True
                     st.success("관리자 인증 완료")

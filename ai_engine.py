@@ -3,6 +3,12 @@ import socket
 import prompts
 from dotenv import load_dotenv
 
+# Streamlit Secrets를 런타임에 읽기 위해(재부팅 없이 반영 목적)
+try:
+    import streamlit as st
+except Exception:  # pragma: no cover
+    st = None
+
 from openai import OpenAI
 from openai import (
     APIError,
@@ -15,14 +21,26 @@ from openai import (
 load_dotenv()
 
 
+def _get_secret(key: str, default=None):
+    # 1) Streamlit Secrets (재부팅 없이 값 변경 반영 목적)
+    if st is not None:
+        try:
+            if key in st.secrets:
+                return st.secrets.get(key)
+        except Exception:
+            pass
+    # 2) 환경변수(.env 포함)
+    return os.getenv(key, default)
+
+
 def get_openai_api_key():
     # 키를 교체한 뒤 앱을 재시작하지 않아도 반영되도록 매번 조회
-    return os.getenv("OPENAI_API_KEY")
+    return _get_secret("OPENAI_API_KEY")
 
 
 def get_openai_model():
     # 기본: 빠르고 저렴한 4o-mini
-    return os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+    return _get_secret("OPENAI_MODEL", "gpt-4o-mini")
 
 
 def init_openai_client():
@@ -117,8 +135,8 @@ def analyze_compatibility_with_meta(data_a, data_b, name_a, name_b, mode="collea
     )
 
     try:
-        timeout_s = int(os.getenv("OPENAI_TIMEOUT", "45"))
-        max_tokens = int(os.getenv("OPENAI_MAX_TOKENS", "900"))
+        timeout_s = int(_get_secret("OPENAI_TIMEOUT", "45"))
+        max_tokens = int(_get_secret("OPENAI_MAX_TOKENS", "900"))
 
         model_name = get_openai_model()
         resp = client.chat.completions.create(
@@ -163,8 +181,8 @@ def analyze_team_synergy_with_meta(team_members, team_name, leader_name):
     )
 
     try:
-        timeout_s = int(os.getenv("OPENAI_TIMEOUT", "45"))
-        max_tokens = int(os.getenv("OPENAI_MAX_TOKENS", "900"))
+        timeout_s = int(_get_secret("OPENAI_TIMEOUT", "45"))
+        max_tokens = int(_get_secret("OPENAI_MAX_TOKENS", "900"))
 
         model_name = get_openai_model()
         resp = client.chat.completions.create(
