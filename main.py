@@ -87,26 +87,26 @@ def set_page_style():
             box-shadow: 0 20px 50px rgba(0, 0, 0, 0.2);
         }
 
-        /* 타이틀 디자인 - 네온 감성의 세련된 텍스트 */
+        /* 타이틀 디자인 - 모바일에서 과도하게 커지지 않도록 clamp 적용 */
         .header-title {
-            font-size: 3.2rem;
+            font-size: clamp(1.6rem, 4.5vw, 2.6rem);
             font-weight: 900;
-            letter-spacing: -2.5px;
+            letter-spacing: -1.8px;
             text-align: center;
-            margin-bottom: 0.5rem;
+            margin-bottom: 0.4rem;
             background: linear-gradient(135deg, #fff 30%, #a855f7 100%);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
-            filter: drop-shadow(0 0 15px rgba(168, 85, 247, 0.3));
+            filter: drop-shadow(0 0 12px rgba(168, 85, 247, 0.28));
         }
         
         .header-sub {
-            font-size: 1rem;
+            font-size: clamp(0.75rem, 2.2vw, 0.95rem);
             color: #a1a1aa;
             text-align: center;
-            margin-bottom: 3.5rem;
+            margin-bottom: 2.2rem;
             font-weight: 400;
-            letter-spacing: 4px;
+            letter-spacing: 3px;
             text-transform: uppercase;
             opacity: 0.8;
         }
