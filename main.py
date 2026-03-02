@@ -456,35 +456,58 @@ def show_main_content(emp_id):
                     st.warning("코드를 입력해주세요.")
                 else:
                     try:
-                        cleaned_input = raw_input.strip()
-                        # Base64에 허용되지 않는 모든 문자(한글, 특수문자, 마크다운 기호 등)를 정규식으로 강력하게 제거
-                        cleaned_input = re.sub(r'[^A-Za-z0-9+/=]', '', cleaned_input)
-                        
+                        original_input = raw_input.strip()
+
+                        # 1) 사용자가 붙여넣을 때 설명문/한글/마크다운이 같이 섞이는 케이스를 먼저 감지
+                        if re.search(r"[가-힣]", original_input) or re.search(r"[`*_#<>]", original_input):
+                            st.error("코드에 한글/마크다운/부적절한 기호가 섞여 있어 동기화에 실패했습니다. '코드만' 복사해서 붙여넣거나, 새 대화/새로고침 후 다시 시도해주세요.")
+                            st.stop()
+
+                        # 2) Base64에 허용되는 문자만 남김
+                        cleaned_input = re.sub(r"[^A-Za-z0-9+/=]", "", original_input)
+
+                        if len(cleaned_input) < 40:
+                            st.error("코드 길이가 너무 짧습니다. 올바른 결과 코드를 다시 복사해 붙여넣어 주세요.")
+                            st.stop()
+
+                        # 3) 길이(패딩) 보정
                         missing_padding = len(cleaned_input) % 4
                         if missing_padding:
-                            cleaned_input += '=' * (4 - missing_padding)
-                        decoded_bytes = base64.b64decode(cleaned_input)
+                            cleaned_input += "=" * (4 - missing_padding)
+
                         try:
-                            decoded_str = decoded_bytes.decode('utf-8')
+                            decoded_bytes = base64.b64decode(cleaned_input)
+                        except Exception:
+                            st.error("코드 길이가 맞지 않거나(Base64 패딩 오류), 일부 문자가 누락되었습니다. 다시 복사해서 붙여넣어 주세요.")
+                            st.stop()
+
+                        # 4) 문자열 디코딩
+                        try:
+                            decoded_str = decoded_bytes.decode("utf-8")
                         except UnicodeDecodeError:
                             try:
-                                decoded_str = decoded_bytes.decode('cp949')
+                                decoded_str = decoded_bytes.decode("cp949")
                             except UnicodeDecodeError:
-                                decoded_str = decoded_bytes.decode('utf-8', errors='replace')
+                                st.error("코드가 UTF-8/CP949로 해석되지 않습니다. 복사 과정에서 코드가 손상된 것 같아요. 다시 복사해 주세요.")
+                                st.stop()
+
+                        # 5) JSON 파싱
                         try:
                             json_data = json.loads(decoded_str)
                         except json.JSONDecodeError:
-                            match = re.search(r'\\{.*\\}', decoded_str, re.DOTALL)
+                            match = re.search(r"\\{.*\\}", decoded_str, re.DOTALL)
                             if match:
                                 json_data = json.loads(match.group())
                             else:
-                                raise ValueError("JSON 형식을 찾을 수 없습니다.")
+                                st.error("코드 안에서 JSON 데이터를 찾을 수 없습니다. (예: 중간에 줄바꿈/문구가 섞였을 수 있어요) 코드만 다시 붙여넣어 주세요.")
+                                st.stop()
 
                         db.save_profile(emp_id, json.dumps(json_data, ensure_ascii=False), llm_name=selected_llm)
                         st.session_state.sync_success = True
                         st.rerun()
                     except Exception as e:
-                        st.error(f"유효하지 않은 코드 형식입니다. (상세: {str(e)})")
+                        # 최후의 방어: 예상 못한 케이스는 최소 정보로 안내
+                        st.error("데이터 동기화 중 오류가 발생했습니다. 코드만 다시 붙여넣어 시도해 주세요.")
         
         with sync_col2:
             if st.session_state.get('sync_success'):
