@@ -82,8 +82,8 @@ def _build_prompt(data_a, data_b, name_a, name_b, mode, additional_info):
         system_prompt = prompts.COLLEAGUE_PROMPT
         context_text = "관계 유형: 직장 동료"
 
-    # 속도 우선: 너무 길게 뽑지 않도록 힌트
-    length_hint = "리포트는 핵심 위주로 900~1400자 내로 작성해줘."
+    # 리포트 품질/자세함 우선(너무 장문은 피하되, 근거/예시를 충분히)
+    length_hint = "리포트는 자세하게 작성하되 과도하게 늘어지지 않게, 약 2000~3000자 내로 구성해줘. 각 섹션에 근거/예시를 1개 이상 포함해줘."
 
     if mode.startswith("self"):
         user_content = f"""
@@ -135,8 +135,8 @@ def analyze_compatibility_with_meta(data_a, data_b, name_a, name_b, mode="collea
     )
 
     try:
-        timeout_s = int(_get_secret("OPENAI_TIMEOUT", "45"))
-        max_tokens = int(_get_secret("OPENAI_MAX_TOKENS", "900"))
+        timeout_s = int(_get_secret("OPENAI_TIMEOUT", "60"))
+        max_tokens = int(_get_secret("OPENAI_MAX_TOKENS", "1600"))
 
         model_name = get_openai_model()
         resp = client.chat.completions.create(
@@ -181,8 +181,8 @@ def analyze_team_synergy_with_meta(team_members, team_name, leader_name):
     )
 
     try:
-        timeout_s = int(_get_secret("OPENAI_TIMEOUT", "45"))
-        max_tokens = int(_get_secret("OPENAI_MAX_TOKENS", "900"))
+        timeout_s = int(_get_secret("OPENAI_TIMEOUT", "60"))
+        max_tokens = int(_get_secret("OPENAI_MAX_TOKENS", "1600"))
 
         model_name = get_openai_model()
         resp = client.chat.completions.create(
