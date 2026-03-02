@@ -865,6 +865,20 @@ def show_main_content(emp_id):
 
 def main():
     set_page_style()
+
+    # (운영용) 1회성 DB 초기화 스위치: Streamlit Secrets에 RESET_DB="true"를 넣고 1회 로드하면 DB 파일을 삭제합니다.
+    try:
+        reset_flag = str(st.secrets.get("RESET_DB", "false")).lower()
+    except Exception:
+        reset_flag = "false"
+
+    if reset_flag in ("true", "1", "yes"):
+        ok = db.reset_db()
+        if ok:
+            st.warning("⚠️ 관리자 설정(RESET_DB)으로 사용자 DB를 초기화했습니다. 이제 Secrets에서 RESET_DB를 false로 되돌려주세요.")
+        else:
+            st.warning("⚠️ RESET_DB가 켜져 있지만 DB 삭제에 실패했습니다. Logs를 확인해주세요.")
+
     db.init_db()
     if 'logged_in_id' not in st.session_state:
         show_login_page()

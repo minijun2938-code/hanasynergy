@@ -1,15 +1,29 @@
+import os
 import sqlite3
 from datetime import datetime, timedelta, timezone
 
 import pytz
 
+DB_PATH = 'poc_chemistry.db'
+
 def get_connection():
-    return sqlite3.connect('poc_chemistry.db')
+    return sqlite3.connect(DB_PATH)
 
 def get_kst_now():
     """현재 시간을 한국 표준시(KST)로 반환합니다."""
     tz_kst = pytz.timezone('Asia/Seoul')
     return datetime.now(tz_kst).strftime('%Y-%m-%d %H:%M:%S')
+
+def reset_db():
+    """Delete the local sqlite DB file (Streamlit Cloud persistent storage) to start fresh."""
+    try:
+        if os.path.exists(DB_PATH):
+            os.remove(DB_PATH)
+            return True
+    except Exception:
+        return False
+    return False
+
 
 def init_db():
     with get_connection() as conn:
