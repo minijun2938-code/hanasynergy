@@ -634,7 +634,7 @@ def show_main_content(emp_id):
                     info_a = db.get_user_info(emp_id)
                     info_b = db.get_user_info(selected_other)
                     mode_map = {"직장 동료": "colleague", "연인 궁합": "couple", "상사-부하": "hierarchy"}
-                    with st.spinner("🔍 Gemini 3가 시너지를 정교하게 분석 중입니다..."):
+                    with st.spinner("🔍 AI가 시너지를 정교하게 분석 중입니다..."):
                         report, meta = ai_engine.analyze_compatibility_with_meta(
                             info_a[1],
                             info_b[1],
@@ -774,7 +774,7 @@ def show_main_content(emp_id):
             if btn_cols[2].button("🌟 장단점 분석", use_container_width=True): report_type = "self_swot"
             
             if report_type:
-                with st.spinner("🔍 Gemini 3가 당신의 페르소나를 매핑 중입니다..."):
+                with st.spinner("🔍 AI가 당신의 페르소나를 매핑 중입니다..."):
                     report, meta = ai_engine.analyze_compatibility_with_meta(
                         info_self[1],
                         None,
